@@ -134,19 +134,27 @@ class com_chrischinchilla_ewayrecurring extends CRM_Core_Payment
             $soap_client->__setSoapHeaders($header);
 */
 
+            $gateway_URL = $this->_paymentProcessor['url_recur'];    // eWAY Gateway URL
+
             $soap_client = new nusoap_client("https://www.ewaygateway.com/gateway/ManagedPaymentService/test/managedCreditCardPayment.asmx", false);
-$err = $soap_client->getError();
-if ($err) {
-    echo '<h2>Constructor error</h2><pre>' . $err . '</pre>';
-    echo '<h2>Debug</h2><pre>' . htmlspecialchars($soap_client->getDebug(), ENT_QUOTES) . '</pre>';
-    exit();
-}
+            $err = $soap_client->getError();
+            if ($err) {
+                echo '<h2>Constructor error</h2><pre>' . $err . '</pre>';
+                echo '<h2>Debug</h2><pre>' . htmlspecialchars($soap_client->getDebug(), ENT_QUOTES) . '</pre>';
+                exit();
+            }
 
 // set namespace
-$soap_client->namespaces['man'] = 'https://www.eway.com.au/gateway/managedpayment';
+            $soap_client->namespaces['man'] = 'https://www.eway.com.au/gateway/managedpayment';
 // set SOAP header
-$headers = "<man:eWAYHeader><man:eWAYCustomerID>" . $ewayCustomerID . "</man:eWAYCustomerID><man:Username>" . $this->_paymentProcessor['user_name'] . "</man:Username><man:Password>" . $this->_paymentProcessor['password'] . "</man:Password></man:eWAYHeader>";
-$soap_client->setHeaders($headers);
+            $headers = "<man:eWAYHeader><man:eWAYCustomerID>"
+                     . $ewayCustomerID
+                     . "</man:eWAYCustomerID><man:Username>"
+                     . $this->_paymentProcessor['user_name']
+                     . "</man:Username><man:Password>"
+                     . $this->_paymentProcessor['password']
+                     . "</man:Password></man:eWAYHeader>";
+            $soap_client->setHeaders($headers);
 
             // Add eWay customer
             $requestbody = array(
@@ -165,8 +173,8 @@ $soap_client->setHeaders($headers);
                 'man:Fax' => '',
                 'man:Phone' => '',
                 'man:Mobile' => '',
-                'man:CustomerRef' => 'Test 123', // IS THIS REALLY NEEDED?
-                'man:JobDesc' => $params['description'],
+                'man:CustomerRef' => '',
+                'man:JobDesc' => '',
                 'man:Comments' => '',
                 'man:URL' => '',
                 'man:CCNumber' => $params['credit_card_number'],
@@ -177,15 +185,17 @@ $soap_client->setHeaders($headers);
 
 
             // Hook to allow customer info to be changed before submitting it
-            CRM_Utils_Hook::alterPaymentProcessorParams( $this, $params, $customerinfo );
+            CRM_Utils_Hook::alterPaymentProcessorParams( $this, $params, $requestbody );
 
             // Create the customer via the API
             try{
+                $soapaction = 'https://www.eway.com.au/gateway/managedpayment/CreateCustomer';
+                $result = $soap_client->call('man:CreateCustomer', $requestbody, '', $soapaction);
 
-    $soapaction = 'https://www.eway.com.au/gateway/managedpayment/CreateCustomer';
-    $result = $soap_client->call('man:CreateCustomer', $requestbody, '', $soapaction);
-
-            }catch(Exception $e){
+                if ($result === false) {
+                	return self::errorExit(9011, "Failed to create managed customer");
+                }
+            } catch (Exception $e) {
                 return self::errorExit(9010, $e->getMessage());
             }
 
@@ -201,6 +211,20 @@ $soap_client->setHeaders($headers);
                 $params['contributionRecurID'],
                 'processor_id',
                 $managed_customer_id
+            );
+
+            //send recurring Notification email for user
+            require_once 'CRM/Contribute/BAO/ContributionRecur.php';
+            $recur = new CRM_Contribute_BAO_ContributionRecur();
+            $recur->id = $params['contributionRecurID'];
+            $recur->find(true);
+            $autoRenewMembership = FALSE;
+            CRM_Contribute_BAO_ContributionPage::recurringNotify(
+                CRM_Core_Payment::RECURRING_PAYMENT_START,
+                $params['contactID'],
+                $params['contributionPageID'],
+                $recur,
+                $autoRenewMembership
             );
 
             /* And we're done - this payment will staying in a pending state until it's processed
@@ -412,8 +436,6 @@ $soap_client->setHeaders($headers);
             $params['gross_amount']     = $eWAYResponse->Amount();
             $params['trxn_id']          = $eWAYResponse->TransactionNumber();
         }
-               echo "<pre>";print_r($params);die;
-
         return $params;
     } // end function doDirectPayment
 
@@ -501,6 +523,24 @@ $soap_client->setHeaders($headers);
         } else {
             return null;
         }
+    }
+
+    /*
+     * All details about recurring contributions are maintained in CiviCRM, and
+     * eWAY only records the Token Customer and completed contributions. Given
+     * this, we can provide a do-nothing implementation of 'cancelSubscription' 
+     */
+    function cancelSubscription(&$message = '', $params = array() ) {
+        return TRUE;
+    }
+
+    /*
+     * All details about recurring contributions are maintained in CiviCRM, and
+     * eWAY only records the Token Customer and completed contributions. Given
+     * this, we can provide a do-nothing implementation of 'changeSubscriptionAmount' 
+     */
+    function changeSubscriptionAmount(&$message = '', $params = array() ) {
+        return TRUE;
     }
 
     function send_alert_email($p_eWAY_tran_num, $p_trxn_out, $p_trxn_back, $p_request, $p_response)
