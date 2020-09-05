@@ -18,6 +18,11 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
   const CHARSET = 'UTF-8';
 
   /**
+   * @var GuzzleHttp\Client
+   */
+  protected $guzzleClient;
+
+  /**
    * We only need one instance of this object. So we use the singleton
    * pattern and cache the instance in this variable
    *
@@ -39,6 +44,20 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     $this->_mode = $mode;
     $this->_paymentProcessor = $paymentProcessor;
     $this->_processorName    = ts('eWay Recurring');
+  }
+
+  /**
+   * @return \GuzzleHttp\Client
+   */
+  public function getGuzzleClient(): \GuzzleHttp\Client {
+    return $this->guzzleClient ?? new \GuzzleHttp\Client();
+  }
+
+  /**
+   * @param \GuzzleHttp\Client $guzzleClient
+   */
+  public function setGuzzleClient(\GuzzleHttp\Client $guzzleClient) {
+    $this->guzzleClient = $guzzleClient;
   }
 
   /**
@@ -172,14 +191,8 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     }
     // This is a one off payment. This code is similar to in core.
     else {
-      try {
-        $result = $this->processSinglePayment($params);
-        $params = array_merge($params, $result);
-
-      }
-      catch (CRM_Core_Exception $e) {
-        throw new PaymentProcessorException($e->getMessage(), 9001);
-      }
+      $result = $this->processSinglePayment($params);
+      $params = array_merge($params, $result);
     }
     return $params;
   } // end function doDirectPayment
@@ -365,47 +378,13 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
    * @throws \CRM_Core_Exception
    */
   protected function callEwayGateway($requestXML) {
-    $submit = curl_init($this->_paymentProcessor['url_site']);
-
-    if (!$submit) {
-      throw new CRM_Core_Exception('Could not initiate connection to payment gateway');
-    }
-    curl_setopt($submit, CURLOPT_POST, TRUE);
-    // Return the result on success, FALSE on failure.
-    curl_setopt($submit, CURLOPT_RETURNTRANSFER, TRUE);
-    curl_setopt($submit, CURLOPT_POSTFIELDS, $requestXML);
-    curl_setopt($submit, CURLOPT_TIMEOUT, 36000);
-    // if open_basedir or safe_mode are enabled in PHP settings CURLOPT_FOLLOW_LOCATION won't work so don't apply it
-    // it's not really required CRM-5841
-    if (ini_get('open_basedir') == '' && ini_get('safe_mode' == 'Off')) {
-      // Ensure any Location headers are followed.
-      curl_setopt($submit, CURLOPT_FOLLOWLOCATION, 1);
-    }
-
-    $responseData = curl_exec($submit);
-
-    //----------------------------------------------------------------------------------------------------
-    // See if we had a curl error - if so tell 'em and bail out
-    //
-    // NOTE: curl_error does not return a logical value (see its documentation), but
-    // a string, which is empty when there was no error.
-    //----------------------------------------------------------------------------------------------------
-    if ((curl_errno($submit) > 0) || (strlen(curl_error($submit)) > 0)) {
-      $errorNum  = curl_errno($submit);
-      $errorDesc = curl_error($submit);
-
-      if ($errorNum == 0) {
-        // Paranoia - in the unlikely event that 'curl' errno fails.
-        $errorNum = 9005;
-      }
-
-      if (strlen($errorDesc) == 0) {
-        // Paranoia - in the unlikely event that 'curl' error fails.
-        $errorDesc = "Connection to eWAY payment gateway failed";
-      }
-
-      throw new CRM_Core_Exception($errorNum . ' ' . $errorDesc);
-    }
+    $responseData = (string) $this->getGuzzleClient()->post($this->_paymentProcessor['url_site'], [
+      'body' => $requestXML,
+      'curl' => [
+        CURLOPT_RETURNTRANSFER => TRUE,
+        CURLOPT_SSL_VERIFYPEER => Civi::settings()->get('verifySSL'),
+      ],
+    ])->getBody();
 
     //----------------------------------------------------------------------------------------------------
     // If NULL data returned - tell 'em and bail out
@@ -414,20 +393,15 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     // any reason, the return value will be the boolean false.
     //----------------------------------------------------------------------------------------------------
     if (($responseData === FALSE) || (strlen($responseData) == 0)) {
-      throw new CRM_Core_Exception("Error: Connection to payment gateway failed - no data returned.");
+      throw new PaymentProcessorException("Error: Connection to payment gateway failed - no data returned.", 9008);
     }
 
     //----------------------------------------------------------------------------------------------------
     // If gateway returned no data - tell 'em and bail out
     //----------------------------------------------------------------------------------------------------
     if (empty($responseData)) {
-      throw new CRM_Core_Exception("Error: No data returned from payment gateway.");
+      throw new PaymentProcessorException("Error: No data returned from payment gateway.", 9008);
     }
-
-    //----------------------------------------------------------------------------------------------------
-    // Success so far - close the curl and check the data
-    //----------------------------------------------------------------------------------------------------
-    curl_close($submit);
 
     return $responseData;
   }
