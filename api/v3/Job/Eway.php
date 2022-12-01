@@ -77,7 +77,12 @@ function _civicrm_api3_job_eway_process_contribution($instance) {
   $amount_in_cents = str_replace('.', '', $instance['contribution_recur']->amount);
   $managed_customer_id = $instance['contribution_recur']->processor_id;
   $instance['contribution_recur']->contribution_status_id = _eway_recurring_get_contribution_status_id('In Progress');
-
+  if (empty($instance['contribution']->id)) {
+    $pendingContribution = repeat_contribution($instance['contribution'], 'Pending', $amount_in_cents);
+  }
+  else {
+    $pendingContribution = civicrm_api3('Contribution', 'get', ['id' => $instance['contribution']->id]);
+  }
   try {
     $result = civicrm_api3('ewayrecurring', 'payment', array(
       'invoice_id' => $instance['contribution']->invoice_id,
@@ -90,13 +95,8 @@ function _civicrm_api3_job_eway_process_contribution($instance) {
     // Process the contribution as either Completed or Failed.
     $apiResult[] = "Successfully processed payment for " . $instance['type'] . " recurring contribution ID: " . $instance['contribution_recur']->id;
     $apiResult[] = "Marking contribution as complete";
-    $instance['contribution']->trxn_id = $result['values'][$managed_customer_id]['trxn_id'];
-    if (empty($instance['contribution']->id)) {
-      repeat_contribution($instance['contribution'], 'Completed', $amount_in_cents);
-    }
-    else {
-      complete_contribution($instance['contribution']);
-    }
+    $pendingContribution['values'][$pendingContribution['id']]['trxn_id'] = $result['values'][$managed_customer_id]['trxn_id'];
+    complete_contribution($pendingContribution['values'][$pendingContribution['id']]);
     $instance['contribution_recur']->failure_count = 0;
   }
   catch (CiviCRM_API3_Exception $e) {
@@ -104,9 +104,8 @@ function _civicrm_api3_job_eway_process_contribution($instance) {
     $apiResult[] = 'eWAY managed customer: ' . $instance['contribution_recur']->processor_id;
     $apiResult[] = 'eWAY response: ' . $result['faultstring'];
     $apiResult[] = "Marking contribution as failed";
-    // I hate doing this save as it bypasses hooks but need a bigger review to do a better job.
-    $instance['contribution']->contribution_status_id = _eway_recurring_get_contribution_status_id('Failed');
-    $instance['contribution']->save();
+    CRM_Contribute_BAO_Contribution::failPayment($pendingContribution['id'],
+      $instance['contribution_recur']->contact_id, $e->getMessage());
     $instance['contribution_recur']->failure_count += 1;
     if (_eway_recurring_is_recurring_expired($instance['contribution_recur']->id)) {
       $instance['contribution_recur']->contribution_status_id = _eway_recurring_get_contribution_status_id('Cancelled');
@@ -329,8 +328,8 @@ function process_eway_payment($soap_client, $managed_customer_id, $amount_in_cen
  */
 function complete_contribution($contribution) {
   civicrm_api3('contribution', 'completetransaction', array(
-    'id' => $contribution->id,
-    'trxn_id' => $contribution->trxn_id,
+    'id' => $contribution['id'],
+    'trxn_id' => $contribution['trxn_id'],
   ));
   return $contribution;
 }
@@ -354,7 +353,7 @@ function complete_contribution($contribution) {
 function repeat_contribution($contribution, $status_id, $amount_in_cents) {
   $actions = civicrm_api3('Contribution', 'getactions', []);
   if (in_array('repeattransaction', $actions['values'])) {
-    civicrm_api3('contribution', 'repeattransaction', [
+    return civicrm_api3('contribution', 'repeattransaction', [
       'trxn_id' => $contribution->trxn_id,
       'contribution_status_id' => $status_id,
       'total_amount' => $amount_in_cents / 100,
