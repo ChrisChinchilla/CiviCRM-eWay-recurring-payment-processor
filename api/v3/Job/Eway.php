@@ -102,7 +102,7 @@ function _civicrm_api3_job_eway_process_contribution($instance) {
   catch (CiviCRM_API3_Exception $e) {
     $apiResult[] = "ERROR: failed to process payment for " . $instance['type'] . " recurring contribution ID: " . $instance['contribution_recur']->id;
     $apiResult[] = 'eWAY managed customer: ' . $instance['contribution_recur']->processor_id;
-    $apiResult[] = 'eWAY response: ' . $result['faultstring'];
+    $apiResult[] = 'eWAY response: ' . $e->getMessage();
     $apiResult[] = "Marking contribution as failed";
     CRM_Contribute_BAO_Contribution::failPayment($pendingContribution['id'],
       $instance['contribution_recur']->contact_id, $e->getMessage());
