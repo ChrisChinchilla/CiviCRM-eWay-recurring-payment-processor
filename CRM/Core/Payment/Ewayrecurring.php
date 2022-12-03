@@ -710,12 +710,11 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     }
 
     $status = ($eWAYResponse->BeagleScore()) ? ($eWAYResponse->Status() . ': ' . $eWAYResponse->BeagleScore()) : $eWAYResponse->Status();
-    $result = array(
-      'gross_amount' => $eWAYResponse->Amount(),
+    $result = [
       'trxn_id' => $eWAYResponse->TransactionNumber(),
       'trxn_result_code' => $status,
       'payment_status_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed'),
-    );
+    ];
     return $result;
   }
 
