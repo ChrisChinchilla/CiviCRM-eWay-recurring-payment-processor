@@ -1,8 +1,11 @@
 <?php
 
+use CRM_Ewayrecurring_ExtensionUtil as E;
+use Civi\Payment\Exception\PaymentProcessorException;
+
 // As this handles recurring and non-recurring, we also need to include original api libraries
-require_once 'packages/eWAY/eWAY_GatewayRequest.php';
-require_once 'packages/eWAY/eWAY_GatewayResponse.php';
+require_once E::path('lib/eWAY/eWAY_GatewayRequest.php');
+require_once E::path('lib/eWAY/eWAY_GatewayResponse.php');
 
 /**
  * Class CRM_Core_Payment_Ewayrecurring
@@ -12,7 +15,12 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
   /**
    * (not used, implicit in the API, might need to convert?)
    */
-  const CHARSET  = 'UTF-8';
+  const CHARSET = 'UTF-8';
+
+  /**
+   * @var GuzzleHttp\Client
+   */
+  protected $guzzleClient;
 
   /**
    * We only need one instance of this object. So we use the singleton
@@ -38,6 +46,19 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     $this->_processorName    = ts('eWay Recurring');
   }
 
+  /**
+   * @return \GuzzleHttp\Client
+   */
+  public function getGuzzleClient(): \GuzzleHttp\Client {
+    return $this->guzzleClient ?? new \GuzzleHttp\Client();
+  }
+
+  /**
+   * @param \GuzzleHttp\Client $guzzleClient
+   */
+  public function setGuzzleClient(\GuzzleHttp\Client $guzzleClient) {
+    $this->guzzleClient = $guzzleClient;
+  }
 
   /**
    * Singleton function used to manage this object.
@@ -61,7 +82,6 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     return self::$_singleton[$processorName];
   }
 
-
   /**********************************************************
    * This function sends request and receives response from eWAY payment gateway.
    *
@@ -74,12 +94,12 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
    *
    * @param array $params
    *
-   * @throws Exception
+   * @throws \Civi\Payment\Exception\PaymentProcessorException
    * @return array
    */
   public function doDirectPayment(&$params) {
     if (!defined('CURLOPT_SSLCERT')) {
-      CRM_Core_Error::fatal(ts('eWAY - Gateway requires curl with SSL support'));
+      throw new PaymentProcessorException(E::ts('eWAY - Gateway requires curl with SSL support'), 9000);
     }
 
     /*
@@ -96,11 +116,11 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     // Was the recurring payment check box checked?
     if (isset($params['is_recur']) && $params['is_recur'] == 1) {
       // Create the customer via the API.
-      try{
+      try {
         $result = $this->createToken($this->_paymentProcessor, $params);
       }
       catch (Exception $e) {
-        return self::errorExit(9010, $e->getMessage());
+        throw new PaymentProcessorException($e->getMessage(), 9010);
       }
 
       // We've created the customer successfully.
@@ -165,20 +185,14 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
         );
       }
       catch (CiviCRM_API3_Exception $e) {
-        return self::errorExit(9014, 'Initial payment not processed' . $e->getMessage());
+        throw new PaymentProcessorException('Initial payment not processed' . $e->getMessage(), 9014);
       }
 
     }
     // This is a one off payment. This code is similar to in core.
     else {
-      try {
-        $result = $this->processSinglePayment($params);
-        $params = array_merge($params, $result);
-
-      }
-      catch (CRM_Core_Exception $e) {
-        return self::errorExit(9001, $e->getMessage());
-      }
+      $result = $this->processSinglePayment($params);
+      $params = array_merge($params, $result);
     }
     return $params;
   } // end function doDirectPayment
@@ -193,8 +207,8 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
    * @param null $contributionID
    *   If a contribution exists pass in the contribution ID.
    *
-   * @return bool True if ID exists, else false
-   * True if ID exists, else false
+   * @return bool
+   *   True if ID exists, else false
    */
   protected function checkDupe($invoiceId, $contributionID = NULL) {
     $contribution = new CRM_Contribute_DAO_Contribution();
@@ -206,11 +220,11 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     return $contribution->find();
   }
 
-  /*************************************************************************************************
+  /**
    * This function checks the eWAY response status - returning a boolean false if status != 'true'
-   ************************************************************************************************
    *
-   * @param GatewayResponse $response
+   *
+   * @param EwayRecurringGatewayResponse $response
    *
    * @return bool
    */
@@ -220,40 +234,6 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
       return TRUE;
     }
     return FALSE;
-  }
-
-  /**************************************************
-   * Produces error message and returns from class
-   *************************************************
-   *
-   * @param null $errorCode
-   * @param null $errorMessage
-   *
-   * @return object
-   */
-  public function errorExit ($errorCode = NULL, $errorMessage = NULL) {
-    $e = CRM_Core_Error::singleton();
-
-    if ($errorCode) {
-      $e->push($errorCode, 0, NULL, $errorMessage);
-    }
-    else {
-      $e->push(9000, 0, NULL, 'Unknown System Error.');
-    }
-    return $e;
-  }
-
-  /**************************************************
-   * NOTE: 'doTransferCheckout' not implemented
-   *************************************************
-   *
-   * @param $params
-   * @param $component
-   *
-   * @throws Exception
-   */
-  public function doTransferCheckout(&$params, $component) {
-    CRM_Core_Error::fatal(ts('This function is not implemented'));
   }
 
   /********************************************************************************************
@@ -284,7 +264,7 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     if (!empty($errorMsg)) {
       if (civicrm_api3('setting', 'getvalue', array(
         'group' => 'eway',
-        'name' => 'eway_developer_mode'
+        'name' => 'eway_developer_mode',
       ))) {
         CRM_Core_Session::setStatus(ts('Site is in developer mode so these errors are being ignored: ' . implode(', ', $errorMsg)));
         return NULL;
@@ -295,7 +275,6 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
       return NULL;
     }
   }
-
 
   /**
    * Cancel EWay Subscription.
@@ -379,6 +358,9 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     if ($entity == 'recur') {
       $entity = 'contribution_recur';
     }
+    if (empty($entity)) {
+      return 0;
+    }
     try {
       return civicrm_api3($entity, 'getvalue', array('id' => $entityID, 'return' => 'contact_id'));
     }
@@ -396,48 +378,13 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
    * @throws \CRM_Core_Exception
    */
   protected function callEwayGateway($requestXML) {
-    $submit = curl_init($this->_paymentProcessor['url_site']);
-
-    if (!$submit) {
-      throw new CRM_Core_Exception('Could not initiate connection to payment gateway');
-    }
-    curl_setopt($submit, CURLOPT_POST, TRUE);
-    // Return the result on success, FALSE on failure.
-    curl_setopt($submit, CURLOPT_RETURNTRANSFER, TRUE);
-    curl_setopt($submit, CURLOPT_POSTFIELDS, $requestXML);
-    curl_setopt($submit, CURLOPT_TIMEOUT, 36000);
-    // if open_basedir or safe_mode are enabled in PHP settings CURLOPT_FOLLOW_LOCATION won't work so don't apply it
-    // it's not really required CRM-5841
-    if (ini_get('open_basedir') == '' && ini_get('safe_mode' == 'Off')) {
-      // Ensure any Location headers are followed.
-      curl_setopt($submit, CURLOPT_FOLLOWLOCATION, 1);
-    }
-
-    $responseData = curl_exec($submit);
-
-
-    //----------------------------------------------------------------------------------------------------
-    // See if we had a curl error - if so tell 'em and bail out
-    //
-    // NOTE: curl_error does not return a logical value (see its documentation), but
-    // a string, which is empty when there was no error.
-    //----------------------------------------------------------------------------------------------------
-    if ((curl_errno($submit) > 0) || (strlen(curl_error($submit)) > 0)) {
-      $errorNum  = curl_errno($submit);
-      $errorDesc = curl_error($submit);
-
-      if ($errorNum == 0) {
-        // Paranoia - in the unlikely event that 'curl' errno fails.
-        $errorNum = 9005;
-      }
-
-      if (strlen($errorDesc) == 0) {
-        // Paranoia - in the unlikely event that 'curl' error fails.
-        $errorDesc = "Connection to eWAY payment gateway failed";
-      }
-
-      throw new CRM_Core_Exception($errorNum . ' ' . $errorDesc);
-    }
+    $responseData = (string) $this->getGuzzleClient()->post($this->_paymentProcessor['url_site'], [
+      'body' => $requestXML,
+      'curl' => [
+        CURLOPT_RETURNTRANSFER => TRUE,
+        CURLOPT_SSL_VERIFYPEER => Civi::settings()->get('verifySSL'),
+      ],
+    ])->getBody();
 
     //----------------------------------------------------------------------------------------------------
     // If NULL data returned - tell 'em and bail out
@@ -446,20 +393,15 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     // any reason, the return value will be the boolean false.
     //----------------------------------------------------------------------------------------------------
     if (($responseData === FALSE) || (strlen($responseData) == 0)) {
-      throw new CRM_Core_Exception("Error: Connection to payment gateway failed - no data returned.");
+      throw new PaymentProcessorException("Error: Connection to payment gateway failed - no data returned.", 9008);
     }
 
     //----------------------------------------------------------------------------------------------------
     // If gateway returned no data - tell 'em and bail out
     //----------------------------------------------------------------------------------------------------
     if (empty($responseData)) {
-      throw new CRM_Core_Exception("Error: No data returned from payment gateway.");
+      throw new PaymentProcessorException("Error: No data returned from payment gateway.", 9008);
     }
-
-    //----------------------------------------------------------------------------------------------------
-    // Success so far - close the curl and check the data
-    //----------------------------------------------------------------------------------------------------
-    curl_close($submit);
 
     return $responseData;
   }
@@ -484,13 +426,13 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
    * @return int
    *   Unique id of the token created to manage this customer in eway.
    *
-   * @throws \CRM_Core_Exception
+   * @throws \Civi\Payment\Exception\PaymentProcessorException
    */
   protected function createToken($paymentProcessor, $params) {
     if (civicrm_api3('setting', 'getvalue', array(
       'group' => 'eway',
-      'name' => 'eway_developer_mode'
-      ))) {
+      'name' => 'eway_developer_mode',
+    ))) {
       // I'm not sure about setting status as in future we might do this in an api call.
       CRM_Core_Session::setStatus(ts('Site is in developer mode. No communication with eway has taken place'));
       return uniqid();
@@ -499,7 +441,7 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     $soap_client = new nusoap_client($gateway_URL, FALSE);
     $err = $soap_client->getError();
     if ($err) {
-      throw new CRM_Core_Exception(htmlspecialchars($soap_client->getDebug(), ENT_QUOTES));
+      throw new PaymentProcessorException(htmlspecialchars($soap_client->getDebug(), ENT_QUOTES), 9000);
     }
 
     // Set namespace.
@@ -546,17 +488,17 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     $soapAction = 'https://www.eway.com.au/gateway/managedpayment/CreateCustomer';
     $result = $soap_client->call('man:CreateCustomer', $requestBody, '', $soapAction);
     if ($result === FALSE) {
-      throw new CRM_Core_Exception('Failed to create managed customer - result is FALSE');
+      throw new PaymentProcessorException('Failed to create managed customer - result is FALSE', 9000);
     }
     elseif (is_array($result)) {
-      throw new CRM_Core_Exception('Failed to create managed customer - result ('
+      throw new PaymentProcessorException('Failed to create managed customer - result ('
         . implode(', ', array_keys($result))
         . ') is ('
         . implode(', ', $result)
-        . ')');
+        . ')', 9000);
     }
     elseif (!is_numeric($result)) {
-      throw new CRM_Core_Exception('Failed to create managed customer - result is ' . $result);
+      throw new PaymentProcessorException('Failed to create managed customer - result is ' . $result, 9000);
     }
     return $result;
   }
@@ -623,14 +565,14 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
    * @param $params
    *   Form parameters - this could be altered by hook so is a reference
    *
-   * @return GatewayRequest
+   * @return EwayRecurringGatewayRequest
    * @throws \CRM_Core_Exception
    */
   protected function getEwayRequest(&$params) {
-    $eWAYRequest = new GatewayRequest();
+    $eWAYRequest = new EwayRecurringGatewayRequest();
 
-    if (($eWAYRequest == NULL) || (!($eWAYRequest instanceof GatewayRequest))) {
-      throw new CRM_Core_Exception("Error: Unable to create eWAY Request object.");
+    if (($eWAYRequest == NULL) || (!($eWAYRequest instanceof EwayRecurringGatewayRequest))) {
+      throw new PaymentProcessorException("Error: Unable to create eWAY Request object.", 9000);
     }
 
     $fullAddress = $params['street_address'] . ", " . $params['city'] . ", " . $params['state_province'] . ".";
@@ -698,7 +640,7 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
 
     // Check for a duplicate after the hook has been called.
     if ($this->checkDupe($params['invoiceID'], CRM_Utils_Array::value('contributionID', $params))) {
-      throw new CRM_Core_Exception('It appears that this transaction is a duplicate.  Have you already submitted the form once?  If so there may have been a connection problem.  Check your email for a receipts.  If you do not receive a receipt within 2 hours you can try your transaction again.  If you continue to have problems please contact the site administrator.');
+      throw new PaymentProcessorException('It appears that this transaction is a duplicate.  Have you already submitted the form once?  If so there may have been a connection problem.  Check your email for a receipts.  If you do not receive a receipt within 2 hours you can try your transaction again.  If you continue to have problems please contact the site administrator.', 9000);
     }
     return $eWAYRequest;
   }
@@ -710,7 +652,7 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
    *
    * @return array
    *   Result of payment.
-   * @throws \CRM_Core_Exception
+   * @throws \Civi\Payment\Exception\PaymentProcessorException
    */
   protected function processSinglePayment(&$params) {
 
@@ -718,16 +660,16 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     if ($this->getDummySuccessResult()) {
       return $this->getDummySuccessResult();
     }
-    $eWAYResponse = new GatewayResponse();
+    $eWAYResponse = new EwayRecurringGatewayResponse();
 
-    if (($eWAYResponse == NULL) || (!($eWAYResponse instanceof GatewayResponse))) {
-      throw new CRM_Core_Exception("Error: Unable to create eWAY Response object.");
+    if (($eWAYResponse == NULL) || (!($eWAYResponse instanceof EwayRecurringGatewayResponse))) {
+      throw new PaymentProcessorException("Error: Unable to create eWAY Response object.", 9000);
     }
 
     //----------------------------------------------------------------------------------------------------
     // Convert to XML and send the payment information
     //----------------------------------------------------------------------------------------------------
-    $requestXML = $eWAYRequest->ToXML();
+    $requestXML = $eWAYRequest->ToXml();
     $responseData = $this->callEwayGateway($requestXML);
 
     //----------------------------------------------------------------------------------------------------
@@ -742,12 +684,12 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
       $eWayTrxnError = $eWAYResponse->Error();
 
       if (substr($eWayTrxnError, 0, 6) == "Error:") {
-        throw new CRM_Core_Exception($eWayTrxnError);
+        throw new PaymentProcessorException($eWayTrxnError, 9000);
       }
       $eWayErrorCode = substr($eWayTrxnError, 0, 2);
       $eWayErrorDesc = substr($eWayTrxnError, 3);
 
-      throw new CRM_Core_Exception("Error: [" . $eWayErrorCode . "] - " . $eWayErrorDesc . ".");
+      throw new PaymentProcessorException("Error: [" . $eWayErrorCode . "] - " . $eWayErrorDesc . ".", 9000);
     }
 
     //-----------------------------------------------------------------------------------------------------
@@ -764,16 +706,15 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     $eWayTrxnReference_IN = $eWAYResponse->InvoiceReference();
 
     if ($eWayTrxnReference_IN != $eWayTrxnReference_OUT) {
-      // return self::errorExit( 9009, "Error: Unique Trxn code was not returned by eWAY Gateway. This is extremely unusual! Please contact the administrator of this site immediately with details of this transaction.");
+      // throw new PaymentProcessorException("Error: Unique Trxn code was not returned by eWAY Gateway. This is extremely unusual! Please contact the administrator of this site immediately with details of this transaction.", 9009);
     }
 
     $status = ($eWAYResponse->BeagleScore()) ? ($eWAYResponse->Status() . ': ' . $eWAYResponse->BeagleScore()) : $eWAYResponse->Status();
-    $result = array(
-      'gross_amount' => $eWAYResponse->Amount(),
+    $result = [
       'trxn_id' => $eWAYResponse->TransactionNumber(),
       'trxn_result_code' => $status,
-      'payment_status_id' => 1,
-    );
+      'payment_status_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed'),
+    ];
     return $result;
   }
 
@@ -787,7 +728,7 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
     // If the site is in developer mode we return a mock success.
     if (civicrm_api3('setting', 'getvalue', array(
       'group' => 'eway',
-      'name' => 'eway_developer_mode'
+      'name' => 'eway_developer_mode',
     ))) {
       return array(
         'trxn_id' => uniqid(),
