@@ -56,7 +56,16 @@ function civicrm_api3_job_eway($params) {
 
   $apiResult[] = "Processing " . count($scheduled_contributions) . " scheduled contributions";
   foreach ($scheduled_contributions as $scheduled_contribution) {
-    $apiResult = array_merge($apiResult, _civicrm_api3_job_eway_process_contribution($scheduled_contribution));
+    try {
+      $apiResult = array_merge($apiResult, _civicrm_api3_job_eway_process_contribution($scheduled_contribution));
+    }
+    catch (CiviCRM_API3_Exception $e) {
+      $apiResult[] = "ERROR: failed to process payment for " .
+        $scheduled_contribution['type'] . " recurring contribution ID: " .
+        $scheduled_contribution['contribution']->contribution_recur_id;
+      $apiResult[] = 'Reason given: ' . $e->getMessage();
+      $apiResult[] = "Contribution was not attempted.";
+    }
   }
 
   return civicrm_api3_create_success($apiResult, $params);

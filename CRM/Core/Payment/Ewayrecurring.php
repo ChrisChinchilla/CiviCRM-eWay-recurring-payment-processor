@@ -658,7 +658,12 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
 
     $eWAYRequest = $this->getEwayRequest($params);
     if ($this->getDummySuccessResult()) {
-      return $this->getDummySuccessResult();
+      if ($this->getAmountInCents($params) > 999) {
+        return $this->getDummySuccessResult();
+      }
+      else {
+        throw new PaymentProcessorException(' * Eway Developer Mode: simulated payment failure (amount less than $10)');
+      }
     }
     $eWAYResponse = new EwayRecurringGatewayResponse();
 

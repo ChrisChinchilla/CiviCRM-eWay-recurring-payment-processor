@@ -17,9 +17,13 @@ function civicrm_api3_ewayrecurring_payment($params) {
     'group' => 'eway',
     'name' => 'eway_developer_mode',
   ))) {
-    return civicrm_api3_create_success(array(
-      $params['managed_customer_id'] => array('trxn_id' => uniqid()),
-    ), $params);
+    if ($params['amount_in_cents'] > 999) {
+      return civicrm_api3_create_success(array(
+        $params['managed_customer_id'] => array('trxn_id' => uniqid()),
+        ), $params);
+    } else {
+      throw new API_Exception(' * Eway Developer Mode: simulated payment failure (amount less than $10)');
+    }
   }
 
   $client = CRM_Core_Payment_EwayUtils::getClient($params['payment_processor_id']);
