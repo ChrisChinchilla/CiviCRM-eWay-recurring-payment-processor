@@ -65,25 +65,6 @@ function ewayrecurring_civicrm_navigationMenu(&$menu) {
 }
 
 /**
- * Implements of hook_civicrm_alterSettingsFolders().
- *
- * @param array $metaDataFolders
- */
-function ewayrecurring_civicrm_alterSettingsFolders(&$metaDataFolders) {
-  static $configured = FALSE;
-  if ($configured) {
-    return;
-  }
-  $configured = TRUE;
-
-  $extRoot = dirname(__FILE__) . DIRECTORY_SEPARATOR;
-  $extDir = $extRoot . 'settings';
-  if (!in_array($extDir, $metaDataFolders)) {
-    $metaDataFolders[] = $extDir;
-  }
-}
-
-/**
  * Implements hook_civicrm_buildForm().
  *
  * Set default credit card values when in test mode.
