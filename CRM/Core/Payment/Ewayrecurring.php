@@ -147,10 +147,16 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
         $params['payment_status_id'] = 1;
         // If there's only one installment, then the recurring contribution is now complete
         if (isset($params['installments']) && $params['installments'] == 1) {
-          $status = CRM_Core_OptionGroup::getValue('contribution_status', 'Completed', 'name');
+          $status = CRM_Core_PseudoConstant::getKey(
+            'CRM_Contribute_DAO_ContributionRecur',
+            'contribution_status_id',
+            'Completed');
         }
         else {
-          $status = CRM_Core_OptionGroup::getValue('contribution_status', 'In Progress', 'name');
+          $status = CRM_Core_PseudoConstant::getKey(
+            'CRM_Contribute_DAO_ContributionRecur',
+            'contribution_status_id',
+            'In Progress');
         }
         $recurringContributionID = isset($params['contributionRecurID'])
           ? $params['contributionRecurID']

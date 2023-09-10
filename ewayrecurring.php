@@ -14,15 +14,6 @@ function ewayrecurring_civicrm_config(&$config) {
 }
 
 /**
- * Implementation of hook_civicrm_xmlMenu
- *
- * @param $files array(string)
- */
-function ewayrecurring_civicrm_xmlMenu(&$files) {
-  _ewayrecurring_civix_civicrm_xmlMenu($files);
-}
-
-/**
  * Implementation of hook_civicrm_install
  */
 function ewayrecurring_civicrm_install() {
@@ -30,44 +21,10 @@ function ewayrecurring_civicrm_install() {
 }
 
 /**
- * Implementation of hook_civicrm_postInstall
- */
-function ewayrecurring_civicrm_postInstall() {
-  return _ewayrecurring_civix_civicrm_postInstall();
-}
-
-/**
- * Implementation of hook_civicrm_uninstall
- */
-function ewayrecurring_civicrm_uninstall() {
-  return _ewayrecurring_civix_civicrm_uninstall();
-}
-
-/**
  * Implementation of hook_civicrm_enable
  */
 function ewayrecurring_civicrm_enable() {
   return _ewayrecurring_civix_civicrm_enable();
-}
-
-/**
- * Implementation of hook_civicrm_disable
- */
-function ewayrecurring_civicrm_disable() {
-  return _ewayrecurring_civix_civicrm_disable();
-}
-
-/**
- * Implementation of hook_civicrm_upgrade
- *
- * @param $op string, the type of operation being performed; 'check' or 'enqueue'
- * @param $queue CRM_Queue_Queue, (for 'enqueue') the modifiable list of pending up upgrade tasks
- *
- * @return mixed  based on op. for 'check', returns array(boolean) (TRUE if upgrades are pending)
- *                for 'enqueue', returns void
- */
-function ewayrecurring_civicrm_upgrade($op, CRM_Queue_Queue $queue = NULL) {
-  return _ewayrecurring_civix_civicrm_upgrade($op, $queue);
 }
 
 /**
@@ -88,7 +45,7 @@ function ewayrecurring_civicrm_managed(&$entities) {
       return;
     }
   }
-  return _ewayrecurring_civix_civicrm_managed($entities);
+  return;
 }
 
 /**
@@ -105,25 +62,6 @@ function ewayrecurring_civicrm_navigationMenu(&$menu) {
     'url' => 'civicrm/settings/eway',
     'permission' => 'administer CiviCRM',
   ]);
-}
-
-/**
- * Implements of hook_civicrm_config().
- *
- * @param array $metaDataFolders
- */
-function ewayrecurring_civicrm_alterSettingsFolders(&$metaDataFolders) {
-  static $configured = FALSE;
-  if ($configured) {
-    return;
-  }
-  $configured = TRUE;
-
-  $extRoot = dirname(__FILE__) . DIRECTORY_SEPARATOR;
-  $extDir = $extRoot . 'settings';
-  if (!in_array($extDir, $metaDataFolders)) {
-    $metaDataFolders[] = $extDir;
-  }
 }
 
 /**
