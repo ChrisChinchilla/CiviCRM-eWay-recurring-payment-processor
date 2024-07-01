@@ -97,7 +97,19 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
    * @throws \Civi\Payment\Exception\PaymentProcessorException
    * @return array
    */
-  public function doDirectPayment(&$params) {
+  public function doPayment(&$params, $component = 'contribute') {
+    $propertyBag = \Civi\Payment\PropertyBag::cast($params);
+    $this->_component = $component;
+    $statuses = CRM_Contribute_BAO_Contribution::buildOptions('contribution_status_id', 'validate');
+
+    // If we have a $0 amount, skip call to processor and set payment_status to Completed.
+    // Conceivably a processor might override this - perhaps for setting up a token - but we don't
+    // have an example of that at the moment.
+    if ($propertyBag->getAmount() == 0) {
+      $result['payment_status_id'] = array_search('Completed', $statuses);
+      $result['payment_status'] = 'Completed';
+      return $result;
+    }
     if (!defined('CURLOPT_SSLCERT')) {
       throw new PaymentProcessorException(E::ts('eWAY - Gateway requires curl with SSL support'), 9000);
     }
@@ -143,8 +155,9 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
           $extra['frequency_interval'] = 1;
         }
         $params['trxn_id'] = $initialPayment['values'][$managed_customer_id]['trxn_id'];
-        $params['contribution_status_id'] = 1;
-        $params['payment_status_id'] = 1;
+        $params['contribution_status_id'] = array_search('Completed', $statuses);
+        $params['payment_status_id'] = array_search('Completed', $statuses);
+        $params['payment_stauts'] = 'Completed';
         // If there's only one installment, then the recurring contribution is now complete
         if (isset($params['installments']) && $params['installments'] == 1) {
           $status = CRM_Core_PseudoConstant::getKey(
@@ -201,7 +214,7 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
       $params = array_merge($params, $result);
     }
     return $params;
-  } // end function doDirectPayment
+  } // end function doPayment
 
   // None of these functions have been changed, unless mentioned.
 
@@ -725,6 +738,7 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
       'trxn_id' => $eWAYResponse->TransactionNumber(),
       'trxn_result_code' => $status,
       'payment_status_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed'),
+      'payment_status' => 'Completed',
     ];
     return $result;
   }
