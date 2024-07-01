@@ -139,13 +139,12 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
       $managed_customer_id = $result;
 
       try {
-        $initialPayment = civicrm_api3('ewayrecurring', 'payment', array(
-          'invoice_id' => $params['invoiceID'],
-          'amount_in_cents' => round(((float) $params['amount']) * 100),
-          'managed_customer_id' => $managed_customer_id,
-          'description' => $params['description'] . ts('first payment'),
-          'payment_processor_id' => $this->_paymentProcessor['id'],
-        ));
+        // Use process Single Payment for the first payment because we want to ensure the IP address is set correctly
+        $original_description = $params['description'];
+        $params['description'] = $params['description'] . ' ' . ts('first payment');
+        $result = $this->processSinglePayment($params);
+        $params = array_merge($params, $result);
+        $params['description'] = $original_description;
 
         // Here we compensate for the fact core accepts 0 as a valid frequency
         // interval and set it.
@@ -154,7 +153,6 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
           $params['frequency_interval'] = 1;
           $extra['frequency_interval'] = 1;
         }
-        $params['trxn_id'] = $initialPayment['values'][$managed_customer_id]['trxn_id'];
         $params['contribution_status_id'] = array_search('Completed', $statuses);
         $params['payment_status_id'] = array_search('Completed', $statuses);
         $params['payment_stauts'] = 'Completed';
