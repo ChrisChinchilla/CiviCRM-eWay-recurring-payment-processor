@@ -89,7 +89,7 @@ function _civicrm_api3_job_eway_process_contribution($instance) {
   if (empty($instance['contribution']->id)) {
     $pendingContribution = civicrm_api3('contribution', 'repeattransaction', [
       'trxn_id' => $instance['contribution']->trxn_id,
-      'contribution_status_id' => $status_id,
+      'contribution_status_id' => 'Pending',
       'total_amount' => $amount_in_cents / 100,
       'original_contribution_id' => CRM_Contribute_BAO_ContributionRecur::getTemplateContribution($instance['contribution']->contribution_recur_id)['id'],
     ]);
