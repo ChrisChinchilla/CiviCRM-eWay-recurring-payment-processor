@@ -88,10 +88,10 @@ function _civicrm_api3_job_eway_process_contribution($instance) {
   $instance['contribution_recur']->contribution_status_id = _eway_recurring_get_contribution_status_id('In Progress');
   if (empty($instance['contribution']->id)) {
     $pendingContribution = civicrm_api3('contribution', 'repeattransaction', [
-      'trxn_id' => $contribution->trxn_id,
+      'trxn_id' => $instance['contribution']->trxn_id,
       'contribution_status_id' => $status_id,
       'total_amount' => $amount_in_cents / 100,
-      'original_contribution_id' => CRM_Contribute_BAO_ContributionRecur::getTemplateContribution($contribution->contribution_recur_id)['id'],
+      'original_contribution_id' => CRM_Contribute_BAO_ContributionRecur::getTemplateContribution($instance['contribution']->contribution_recur_id)['id'],
     ]);
   }
   else {
