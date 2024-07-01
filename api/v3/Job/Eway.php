@@ -87,7 +87,12 @@ function _civicrm_api3_job_eway_process_contribution($instance) {
   $managed_customer_id = $instance['contribution_recur']->processor_id;
   $instance['contribution_recur']->contribution_status_id = _eway_recurring_get_contribution_status_id('In Progress');
   if (empty($instance['contribution']->id)) {
-    $pendingContribution = repeat_contribution($instance['contribution'], 'Pending', $amount_in_cents);
+    $pendingContribution = civicrm_api3('contribution', 'repeattransaction', [
+      'trxn_id' => $contribution->trxn_id,
+      'contribution_status_id' => $status_id,
+      'total_amount' => $amount_in_cents / 100,
+      'original_contribution_id' => CRM_Contribute_BAO_ContributionRecur::getTemplateContribution($contribution->contribution_recur_id)['id'],
+    ]);
   }
   else {
     $pendingContribution = civicrm_api3('Contribution', 'get', ['id' => $instance['contribution']->id]);
@@ -105,7 +110,10 @@ function _civicrm_api3_job_eway_process_contribution($instance) {
     $apiResult[] = "Successfully processed payment for " . $instance['type'] . " recurring contribution ID: " . $instance['contribution_recur']->id;
     $apiResult[] = "Marking contribution as complete";
     $pendingContribution['values'][$pendingContribution['id']]['trxn_id'] = $result['values'][$managed_customer_id]['trxn_id'];
-    complete_contribution($pendingContribution['values'][$pendingContribution['id']]);
+    civicrm_api3('Contribution', 'completetransaction', [
+       'id' => $pendingContribution['id'],
+       'trxn_id' => $result['values'][$managed_customer_id]['trxn_id'],
+    ]);
     $instance['contribution_recur']->failure_count = 0;
   }
   catch (CiviCRM_API3_Exception $e) {
@@ -322,59 +330,6 @@ function process_eway_payment($soap_client, $managed_customer_id, $amount_in_cen
   $result = $soap_client->call('man:ProcessPayment', $paymentinfo, '', $soapaction);
 
   return $result;
-}
-
-/**
- * Complete contribution.
- *
- * Marks a contribution as complete.
- *
- * @param CRM_Contribute_BAO_Contribution $contribution
- *  The contribution to mark as complete
- *
- * @return CRM_Contribute_BAO_Contribution
- *   The contribution object.
- */
-function complete_contribution($contribution) {
-  civicrm_api3('contribution', 'completetransaction', array(
-    'id' => $contribution['id'],
-    'trxn_id' => $contribution['trxn_id'],
-  ));
-  return $contribution;
-}
-
-/**
- * Repeat contribution.
- *
- * Marks a contribution as complete.
- *
- * @param CRM_Contribute_BAO_Contribution $contribution
- *  The contribution to mark as complete
- *
- * @param int $status_id
- *
- * @param float $amount_in_cents
- *
- * @return \CRM_Contribute_BAO_Contribution.
- *   The contribution object.
- * @throws \CiviCRM_API3_Exception
- */
-function repeat_contribution($contribution, $status_id, $amount_in_cents) {
-  $actions = civicrm_api3('Contribution', 'getactions', []);
-  if (in_array('repeattransaction', $actions['values'])) {
-    return civicrm_api3('contribution', 'repeattransaction', [
-      'trxn_id' => $contribution->trxn_id,
-      'contribution_status_id' => $status_id,
-      'total_amount' => $amount_in_cents / 100,
-      'original_contribution_id' => CRM_Contribute_BAO_ContributionRecur::getTemplateContribution($contribution->contribution_recur_id)['id'],
-    ]);
-  }
-  else {
-    // Legacy - expect messed up line items. CRM-15996.
-    $contribution->save();
-    complete_contribution($contribution);
-  }
-  return $contribution;
 }
 
 /**

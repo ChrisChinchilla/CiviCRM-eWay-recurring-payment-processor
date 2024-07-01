@@ -97,7 +97,7 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
    * @throws \Civi\Payment\Exception\PaymentProcessorException
    * @return array
    */
-  public function doDirectPayment(&$params) {
+  public function doPayment(&$params, $component = 'contribute') {
     if (!defined('CURLOPT_SSLCERT')) {
       throw new PaymentProcessorException(E::ts('eWAY - Gateway requires curl with SSL support'), 9000);
     }
@@ -201,7 +201,7 @@ class CRM_Core_Payment_Ewayrecurring extends CRM_Core_Payment {
       $params = array_merge($params, $result);
     }
     return $params;
-  } // end function doDirectPayment
+  } // end function doPayment
 
   // None of these functions have been changed, unless mentioned.
 
